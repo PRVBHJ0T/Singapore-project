@@ -1,0 +1,129 @@
+const express = require("express");
+
+const { validate } = require("./middleware");
+const { EmployeeSchema } = require("./types");
+const pool = require("./db");
+const router = express.router();
+
+
+
+
+
+//add a new employee
+router.post('/employees',validate(EmployeeSchema),async (req,res)=>{
+    const {name , age , citizenship_status , gross_salary}= req.body;
+
+    try{
+        const result = await pool.query(
+            `INSERT INTO employees (name, age, citizenship_status, gross_salary)
+       VALUES ($1, $2, $3, $4) RETURNING id`,[name, age, citizenship_status,gross_salary]);
+
+       
+       res.status(201).json({
+        id:result.rows[0].id, 
+        message:"Employee added succesfully"
+       })              
+    }catch(e){
+        console.error("Error adding employee: ", err);
+
+        res.status(500).json({
+            error:"failed to add employee"
+        })
+    }
+})
+
+
+//fetch details
+
+router.get("/", async(req,res)=>{
+    const {citizenship_status, age_group}= req.query;
+
+    let query = "SELECT * FROM employees";
+
+    const params =[];
+
+    if(citizenship_status || age_group ){
+        query += "WHERE";
+
+    }
+
+    if(citizenship_status){
+        params.push(citizenship_status);
+        query +='citizenship_status = $${params.length}'
+    }
+
+    if(age_group){
+        const [minAge , maxAge] = age_group.split("-").map(NUMBER);
+
+        if(params.length)query+= " AND ";
+         
+        params.push(minAge,maxAge);
+        query +="age BETWEEN $${params.length-1} AND $${params.length}";
+    }
+
+    try{
+        const result = await pool.query(query,params);
+
+        res.json(result.rows);
+    }catch(e){
+        console.error("Error in fetching employees",err);
+
+        res.status(500).json({
+            error:"Failed to fetch employees"
+        })
+    }
+})
+
+//update employee details
+
+router.put("/:id",validate(EmployeeSchema),async(req,res)=>{
+    const {id} = req.params;
+    const {name, age, citizenship_status, gross_salary} = req.body;
+
+    try{
+        const result = await pool.query(
+            'UPADATE employees SET name = $1, age=$2, citizenship_status=$3, gross_salary=$4 WHERE id=$5 RETURNING *',
+            [name, age, citizenship_status, gross_salary, id]
+        );
+        if(result.rowCount === 0){
+            return res.status(404).json({
+                error:"Employee not found"
+            })
+        }
+    }catch(e){
+        console.error("Error updating employee",err);
+
+        res.status(500).json({
+            error:"Failed to update employee"
+        })
+    }
+})
+
+//delete employee
+
+router.delete("/:id",async(req,res)=>{
+    const {id} = req.params;
+
+    try{
+        const result = await pool.query(
+            'DELETE FROM employees WHERE id=$1 RETURING *',
+            [id]
+        );
+        if(result.rowCount === 0){
+            return res.status(404).json({
+                error:"Employee not found"
+            })
+        }
+        res.json({
+            message:"Employee deleted successfully"
+        })
+    }catch(e){
+        console.error("Error deleting employee",e);
+
+        res.status(500).json({
+            error:"Failed to delete employee"
+        })
+    }
+})
+
+module.exports = router;
